@@ -1,0 +1,7 @@
+.direnv
+.vscode
+.env*
+plans/
+result/
+.DS_Store
+cmd/test_*

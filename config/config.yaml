@@ -1,0 +1,22 @@
+# ION profile settings.
+profiles:
+  # System profile directory. This profile is intended for machine-wide packages
+  # and may require root-owned activation steps.
+  system:
+    dir: "/var/lib/ion/profiles/system"
+
+  # User profile directory. Environment variables are left unexpanded here and
+  # should be resolved by ION at the point where the profile is used.
+  user:
+    dir: "$XDG_STATE_HOME/.ion/profiles/$USER"
+
+# ION daemon settings.
+daemon:
+  socket:
+    # Unix socket path used by the CLI and other clients to talk to iond.
+    path: "/run/ion/iond.sock"
+
+# System user and group used by ION-owned daemon/system resources.
+user:
+  name: "ion"
+  group: "ion"

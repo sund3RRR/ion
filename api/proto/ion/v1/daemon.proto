@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package ion.v1;
+
+option go_package = "github.com/sund3RRR/ion/pkg/pb/ion/v1;ionv1";
+
+service DaemonService {
+  rpc Ping(PingRequest) returns (PingResponse);
+  rpc Version(VersionRequest) returns (VersionResponse);
+}
+
+message PingRequest {}
+
+message PingResponse {
+  string message = 1;
+}
+
+message VersionRequest {}
+
+message VersionResponse {
+  string version = 1;
+}
