@@ -10,10 +10,15 @@ DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 VERSION_PACKAGE = github.com/sund3RRR/ion/internal/version
 LDFLAGS = -X $(VERSION_PACKAGE).Version=$(VERSION) -X $(VERSION_PACKAGE).Commit=$(COMMIT) -X $(VERSION_PACKAGE).Date=$(DATE)
 
-.PHONY: generate test lint check build build-static build-dynamic build-dev clean
+.PHONY: generate generate-proto generate-sql test lint check build build-static build-dynamic build-dev clean
 
-generate:
+generate: generate-proto generate-sql
+
+generate-proto:
 	$(NIX_DEVELOP) buf generate
+
+generate-sql:
+	$(NIX_DEVELOP) sqlc generate -f pkg/ion/store/sqlc.yaml
 
 test:
 	$(NIX_DEVELOP) go test -v -cover -race -count=1 ./...

@@ -115,7 +115,10 @@
               pkgs.protobuf
               pkgs.protoc-gen-go
               pkgs.protoc-gen-connect-go
+              pkgs.goose
               pkgs.gnumake
+              pkgs.sqlc
+              pkgs.sqlite
             ];
           };
         }
