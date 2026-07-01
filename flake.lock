@@ -7,15 +7,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1782325110,
-        "narHash": "sha256-m+oEhI4dlmZHdVExqEUjDyMRGpKwvN8wDxgIwVRrFdQ=",
+        "lastModified": 1782912229,
+        "narHash": "sha256-J15OKguxahD1nTX2ItG2mbIbyYHYk7fPtzHjqNXG9XQ=",
         "owner": "sund3RRR",
         "repo": "gonix",
-        "rev": "77e1eb70de2e972bda3ee26f9474e0ff199c9dfe",
+        "rev": "3501c41bb3a89b50694d22f13be34cc90092c174",
         "type": "github"
       },
       "original": {
         "owner": "sund3RRR",
+        "ref": "v1.1.2",
         "repo": "gonix",
         "type": "github"
       }

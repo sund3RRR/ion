@@ -4,7 +4,7 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     gonix = {
-      url = "github:sund3RRR/gonix";
+      url = "github:sund3RRR/gonix/v1.1.2";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -54,7 +54,7 @@
               pname = "ion";
               version = appVersion;
               src = lib.cleanSource ./.;
-              vendorHash = "sha256-cVn74Wljuu9tuK6Z8MCpjtdEpU6843MNfz0GSVZ3ZPk=";
+              vendorHash = "sha256-7RG6Zi7UfVv3ciDboZfXmjU4Oy8V4G70M08ZRIdRkBE=";
 
               subPackages = [ "cmd/ion" ];
               preBuild = ''

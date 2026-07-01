@@ -12,6 +12,7 @@ require (
 	github.com/knadh/koanf/v2 v2.3.5
 	github.com/mattn/go-sqlite3 v1.14.47
 	github.com/pressly/goose/v3 v3.26.0
+	github.com/sund3RRR/gonix v1.1.2
 	google.golang.org/protobuf v1.36.11
 )
 

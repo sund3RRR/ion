@@ -2,6 +2,6 @@
 .vscode
 .env*
 plans/
-result/
+result
 .DS_Store
 cmd/test_*
