@@ -3,10 +3,8 @@ INSERT INTO files (
     profile_package_id,
     executable,
     relative_path,
-    materialized_path,
-    store_path
+    materialized_path
 ) VALUES (
-    ?,
     ?,
     ?,
     ?,

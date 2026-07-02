@@ -14,23 +14,20 @@ INSERT INTO files (
     profile_package_id,
     executable,
     relative_path,
-    materialized_path,
-    store_path
+    materialized_path
 ) VALUES (
     ?,
     ?,
     ?,
-    ?,
     ?
-) RETURNING id, profile_package_id, executable, relative_path, materialized_path, store_path, created_at
+) RETURNING id, profile_package_id, executable, relative_path, materialized_path, created_at
 `
 
 type CreateFileParams struct {
 	ProfilePackageID int64  `json:"profile_package_id"`
-	Executable       int64  `json:"executable"`
+	Executable       bool   `json:"executable"`
 	RelativePath     string `json:"relative_path"`
 	MaterializedPath string `json:"materialized_path"`
-	StorePath        string `json:"store_path"`
 }
 
 func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, error) {
@@ -39,7 +36,6 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 		arg.Executable,
 		arg.RelativePath,
 		arg.MaterializedPath,
-		arg.StorePath,
 	)
 	var i File
 	err := row.Scan(
@@ -48,7 +44,6 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 		&i.Executable,
 		&i.RelativePath,
 		&i.MaterializedPath,
-		&i.StorePath,
 		&i.CreatedAt,
 	)
 	return i, err
@@ -65,7 +60,7 @@ func (q *Queries) DeleteFilesByProfilePackage(ctx context.Context, profilePackag
 }
 
 const getFile = `-- name: GetFile :one
-SELECT id, profile_package_id, executable, relative_path, materialized_path, store_path, created_at FROM files
+SELECT id, profile_package_id, executable, relative_path, materialized_path, created_at FROM files
 WHERE id = ?
 `
 
@@ -78,14 +73,13 @@ func (q *Queries) GetFile(ctx context.Context, id int64) (File, error) {
 		&i.Executable,
 		&i.RelativePath,
 		&i.MaterializedPath,
-		&i.StorePath,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getFileByMaterializedPath = `-- name: GetFileByMaterializedPath :one
-SELECT id, profile_package_id, executable, relative_path, materialized_path, store_path, created_at FROM files
+SELECT id, profile_package_id, executable, relative_path, materialized_path, created_at FROM files
 WHERE materialized_path = ?
 `
 
@@ -98,14 +92,13 @@ func (q *Queries) GetFileByMaterializedPath(ctx context.Context, materializedPat
 		&i.Executable,
 		&i.RelativePath,
 		&i.MaterializedPath,
-		&i.StorePath,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listFilesByProfile = `-- name: ListFilesByProfile :many
-SELECT files.id, files.profile_package_id, files.executable, files.relative_path, files.materialized_path, files.store_path, files.created_at FROM files
+SELECT files.id, files.profile_package_id, files.executable, files.relative_path, files.materialized_path, files.created_at FROM files
 JOIN profile_packages ON profile_packages.id = files.profile_package_id
 WHERE profile_packages.profile_id = ?
 ORDER BY files.materialized_path
@@ -126,7 +119,6 @@ func (q *Queries) ListFilesByProfile(ctx context.Context, profileID int64) ([]Fi
 			&i.Executable,
 			&i.RelativePath,
 			&i.MaterializedPath,
-			&i.StorePath,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -143,7 +135,7 @@ func (q *Queries) ListFilesByProfile(ctx context.Context, profileID int64) ([]Fi
 }
 
 const listFilesByProfilePackage = `-- name: ListFilesByProfilePackage :many
-SELECT id, profile_package_id, executable, relative_path, materialized_path, store_path, created_at FROM files
+SELECT id, profile_package_id, executable, relative_path, materialized_path, created_at FROM files
 WHERE profile_package_id = ?
 ORDER BY relative_path
 `
@@ -163,7 +155,6 @@ func (q *Queries) ListFilesByProfilePackage(ctx context.Context, profilePackageI
 			&i.Executable,
 			&i.RelativePath,
 			&i.MaterializedPath,
-			&i.StorePath,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err

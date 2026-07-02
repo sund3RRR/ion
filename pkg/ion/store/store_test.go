@@ -124,7 +124,7 @@ func TestQueriesCoverCoreLifecycle(t *testing.T) {
 	}
 
 	license, err := queries.UpsertLicense(ctx, sqlc.UpsertLicenseParams{
-		Open:        1,
+		Open:        true,
 		Name:        "MIT",
 		Description: "MIT License",
 	})
@@ -194,10 +194,9 @@ func TestQueriesCoverCoreLifecycle(t *testing.T) {
 	materializedPath := filepath.Join(profile.Path, "bin", "hello")
 	file, err := queries.CreateFile(ctx, sqlc.CreateFileParams{
 		ProfilePackageID: profilePackage.ID,
-		Executable:       1,
+		Executable:       true,
 		RelativePath:     "bin/hello",
 		MaterializedPath: materializedPath,
-		StorePath:        "/nix/store/hello/bin/hello",
 	})
 	if err != nil {
 		t.Fatalf("CreateFile() error = %v", err)

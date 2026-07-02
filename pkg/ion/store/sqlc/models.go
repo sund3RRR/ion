@@ -11,10 +11,9 @@ import (
 type File struct {
 	ID               int64  `json:"id"`
 	ProfilePackageID int64  `json:"profile_package_id"`
-	Executable       int64  `json:"executable"`
+	Executable       bool   `json:"executable"`
 	RelativePath     string `json:"relative_path"`
 	MaterializedPath string `json:"materialized_path"`
-	StorePath        string `json:"store_path"`
 	CreatedAt        int64  `json:"created_at"`
 }
 
@@ -29,7 +28,7 @@ type Flake struct {
 
 type License struct {
 	ID          int64  `json:"id"`
-	Open        int64  `json:"open"`
+	Open        bool   `json:"open"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	CreatedAt   int64  `json:"created_at"`

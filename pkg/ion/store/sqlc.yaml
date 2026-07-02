@@ -14,3 +14,7 @@ sql:
           - column: "packages.outputs"
             go_type:
               type: "StringList"
+          - column: "licenses.open"
+            go_type: "bool"
+          - column: "files.executable"
+            go_type: "bool"

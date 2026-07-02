@@ -96,7 +96,7 @@ RETURNING id, open, name, description, created_at
 `
 
 type UpsertLicenseParams struct {
-	Open        int64  `json:"open"`
+	Open        bool   `json:"open"`
 	Name        string `json:"name"`
 	Description string `json:"description"`
 }
