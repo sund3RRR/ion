@@ -2,8 +2,8 @@
 INSERT INTO profiles (
     kind,
     name,
-    path,
-    active_revision
+    owner,
+    path
 ) VALUES (
     ?,
     ?,
@@ -21,10 +21,9 @@ WHERE kind = ? AND name = ?;
 
 -- name: ListProfiles :many
 SELECT * FROM profiles
-ORDER BY kind, name;
+ORDER BY kind, owner, name;
 
--- name: UpdateProfileActiveRevision :one
-UPDATE profiles
-SET active_revision = ?
-WHERE id = ?
-RETURNING *;
+-- name: ListProfilesByOwner :many
+SELECT * FROM profiles
+WHERE owner = ?
+ORDER BY kind, name;

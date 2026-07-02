@@ -8,83 +8,74 @@ import (
 	"database/sql"
 )
 
-type GcRoot struct {
-	ID                 int64  `json:"id"`
-	ProfileID          int64  `json:"profile_id"`
-	InstalledPackageID int64  `json:"installed_package_id"`
-	OutputName         string `json:"output_name"`
-	RootPath           string `json:"root_path"`
-	StorePath          string `json:"store_path"`
-	State              string `json:"state"`
-	CreatedAt          int64  `json:"created_at"`
-	UpdatedAt          int64  `json:"updated_at"`
+type File struct {
+	ID               int64  `json:"id"`
+	ProfilePackageID int64  `json:"profile_package_id"`
+	Executable       int64  `json:"executable"`
+	RelativePath     string `json:"relative_path"`
+	MaterializedPath string `json:"materialized_path"`
+	StorePath        string `json:"store_path"`
+	CreatedAt        int64  `json:"created_at"`
 }
 
-type InstalledPackage struct {
-	ID               int64  `json:"id"`
-	ProfileID        int64  `json:"profile_id"`
-	SourceID         int64  `json:"source_id"`
-	SourceRevisionID int64  `json:"source_revision_id"`
-	Attr             string `json:"attr"`
-	Name             string `json:"name"`
-	Version          string `json:"version"`
-	OutputsJson      string `json:"outputs_json"`
-	DrvPath          string `json:"drv_path"`
-	StorePathsJson   string `json:"store_paths_json"`
-	Reason           string `json:"reason"`
-	Priority         int64  `json:"priority"`
-	UpgradePolicy    string `json:"upgrade_policy"`
-	State            string `json:"state"`
-	CreatedAt        int64  `json:"created_at"`
-	UpdatedAt        int64  `json:"updated_at"`
+type Flake struct {
+	ID          int64  `json:"id"`
+	Alias       string `json:"alias"`
+	FlakeRef    string `json:"flake_ref"`
+	LockJson    string `json:"lock_json"`
+	Fingerprint string `json:"fingerprint"`
+	CreatedAt   int64  `json:"created_at"`
+}
+
+type License struct {
+	ID          int64  `json:"id"`
+	Open        int64  `json:"open"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	CreatedAt   int64  `json:"created_at"`
+}
+
+type Package struct {
+	ID          int64         `json:"id"`
+	FlakeID     int64         `json:"flake_id"`
+	LicenseID   sql.NullInt64 `json:"license_id"`
+	Attr        string        `json:"attr"`
+	Name        string        `json:"name"`
+	Description string        `json:"description"`
+	Version     string        `json:"version"`
+	Outputs     StringList    `json:"outputs"`
+	CreatedAt   int64         `json:"created_at"`
+	UpdatedAt   int64         `json:"updated_at"`
+}
+
+type PackagePlatform struct {
+	PackageID  int64 `json:"package_id"`
+	PlatformID int64 `json:"platform_id"`
+}
+
+type Platform struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	CreatedAt int64  `json:"created_at"`
 }
 
 type Profile struct {
-	ID             int64  `json:"id"`
-	Kind           string `json:"kind"`
-	Name           string `json:"name"`
-	Path           string `json:"path"`
-	ActiveRevision string `json:"active_revision"`
-	CreatedAt      int64  `json:"created_at"`
+	ID        int64  `json:"id"`
+	Kind      string `json:"kind"`
+	Name      string `json:"name"`
+	Owner     string `json:"owner"`
+	Path      string `json:"path"`
+	CreatedAt int64  `json:"created_at"`
 }
 
-type Source struct {
-	ID                int64         `json:"id"`
-	Alias             string        `json:"alias"`
-	FlakeRef          string        `json:"flake_ref"`
-	Enabled           int64         `json:"enabled"`
-	Priority          int64         `json:"priority"`
-	CurrentRevisionID sql.NullInt64 `json:"current_revision_id"`
-	CreatedAt         int64         `json:"created_at"`
-}
-
-type SourceRevision struct {
-	ID           int64  `json:"id"`
-	SourceID     int64  `json:"source_id"`
-	LockJson     string `json:"lock_json"`
-	Fingerprint  string `json:"fingerprint"`
-	MetadataJson string `json:"metadata_json"`
-	CreatedAt    int64  `json:"created_at"`
-}
-
-type Transaction struct {
-	ID           int64         `json:"id"`
-	Kind         string        `json:"kind"`
-	ProfileID    sql.NullInt64 `json:"profile_id"`
-	State        string        `json:"state"`
-	StartedAt    int64         `json:"started_at"`
-	FinishedAt   sql.NullInt64 `json:"finished_at"`
-	Error        string        `json:"error"`
-	MetadataJson string        `json:"metadata_json"`
-}
-
-type TransactionItem struct {
-	ID            int64         `json:"id"`
-	TransactionID int64         `json:"transaction_id"`
-	Action        string        `json:"action"`
-	PackageID     sql.NullInt64 `json:"package_id"`
-	OldJson       string        `json:"old_json"`
-	NewJson       string        `json:"new_json"`
-	State         string        `json:"state"`
-	Error         string        `json:"error"`
+type ProfilePackage struct {
+	ID         int64  `json:"id"`
+	ProfileID  int64  `json:"profile_id"`
+	PackageID  int64  `json:"package_id"`
+	PlatformID int64  `json:"platform_id"`
+	OutputName string `json:"output_name"`
+	DrvPath    string `json:"drv_path"`
+	StorePath  string `json:"store_path"`
+	CreatedAt  int64  `json:"created_at"`
+	UpdatedAt  int64  `json:"updated_at"`
 }

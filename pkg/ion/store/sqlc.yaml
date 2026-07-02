@@ -10,3 +10,7 @@ sql:
         sql_package: "database/sql"
         emit_json_tags: true
         emit_empty_slices: true
+        overrides:
+          - column: "packages.outputs"
+            go_type:
+              type: "StringList"

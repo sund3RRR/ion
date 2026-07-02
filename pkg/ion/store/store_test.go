@@ -30,13 +30,14 @@ func TestOpenCreatesDirectoryAndMigrates(t *testing.T) {
 	}
 
 	for _, table := range []string{
+		"flakes",
+		"platforms",
+		"licenses",
+		"packages",
+		"package_platforms",
 		"profiles",
-		"sources",
-		"source_revisions",
-		"installed_packages",
-		"transactions",
-		"transaction_items",
-		"gc_roots",
+		"profile_packages",
+		"files",
 	} {
 		var name string
 		err := st.DB().QueryRowContext(
@@ -71,10 +72,10 @@ func TestQueriesCoverCoreLifecycle(t *testing.T) {
 	queries := st.Queries()
 
 	profile, err := queries.CreateProfile(ctx, sqlc.CreateProfileParams{
-		Kind:           "user",
-		Name:           "default",
-		Path:           filepath.Join(t.TempDir(), ".ion"),
-		ActiveRevision: "",
+		Kind:  "user",
+		Name:  "default",
+		Owner: "sunder",
+		Path:  filepath.Join(t.TempDir(), ".ion"),
 	})
 	if err != nil {
 		t.Fatalf("CreateProfile() error = %v", err)
@@ -88,176 +89,154 @@ func TestQueriesCoverCoreLifecycle(t *testing.T) {
 		t.Fatalf("ListProfiles() = %#v, want created profile", profiles)
 	}
 
-	source, err := queries.CreateSource(ctx, sqlc.CreateSourceParams{
-		Alias:    "unstable",
-		FlakeRef: "github:NixOS/nixpkgs/nixos-unstable",
-		Enabled:  1,
-		Priority: 10,
+	ownerProfiles, err := queries.ListProfilesByOwner(ctx, "sunder")
+	if err != nil {
+		t.Fatalf("ListProfilesByOwner() error = %v", err)
+	}
+	if len(ownerProfiles) != 1 || ownerProfiles[0].ID != profile.ID {
+		t.Fatalf("ListProfilesByOwner() = %#v, want created profile", ownerProfiles)
+	}
+
+	flake, err := queries.CreateFlake(ctx, sqlc.CreateFlakeParams{
+		Alias:       "unstable",
+		FlakeRef:    "github:NixOS/nixpkgs/nixos-unstable",
+		LockJson:    `{"version":7}`,
+		Fingerprint: "fingerprint",
 	})
 	if err != nil {
-		t.Fatalf("CreateSource() error = %v", err)
+		t.Fatalf("CreateFlake() error = %v", err)
 	}
 
-	revision, err := queries.CreateSourceRevision(ctx, sqlc.CreateSourceRevisionParams{
-		SourceID:     source.ID,
-		LockJson:     `{"version":7}`,
-		Fingerprint:  "fingerprint",
-		MetadataJson: `{}`,
+	gotFlake, err := queries.GetFlakeByAliasFingerprint(ctx, sqlc.GetFlakeByAliasFingerprintParams{
+		Alias:       flake.Alias,
+		Fingerprint: flake.Fingerprint,
 	})
 	if err != nil {
-		t.Fatalf("CreateSourceRevision() error = %v", err)
+		t.Fatalf("GetFlakeByAliasFingerprint() error = %v", err)
+	}
+	if gotFlake.ID != flake.ID {
+		t.Fatalf("flake id = %d, want %d", gotFlake.ID, flake.ID)
 	}
 
-	source, err = queries.SetSourceCurrentRevision(ctx, sqlc.SetSourceCurrentRevisionParams{
-		CurrentRevisionID: sql.NullInt64{Int64: revision.ID, Valid: true},
-		ID:                source.ID,
+	platform, err := queries.UpsertPlatform(ctx, "aarch64-darwin")
+	if err != nil {
+		t.Fatalf("UpsertPlatform() error = %v", err)
+	}
+
+	license, err := queries.UpsertLicense(ctx, sqlc.UpsertLicenseParams{
+		Open:        1,
+		Name:        "MIT",
+		Description: "MIT License",
 	})
 	if err != nil {
-		t.Fatalf("SetSourceCurrentRevision() error = %v", err)
-	}
-	if !source.CurrentRevisionID.Valid || source.CurrentRevisionID.Int64 != revision.ID {
-		t.Fatalf("CurrentRevisionID = %#v, want %d", source.CurrentRevisionID, revision.ID)
+		t.Fatalf("UpsertLicense() error = %v", err)
 	}
 
-	currentRevision, err := queries.GetCurrentSourceRevisionByAlias(ctx, source.Alias)
-	if err != nil {
-		t.Fatalf("GetCurrentSourceRevisionByAlias() error = %v", err)
-	}
-	if currentRevision.ID != revision.ID {
-		t.Fatalf("current revision id = %d, want %d", currentRevision.ID, revision.ID)
-	}
-
-	installed, err := queries.CreateInstalledPackage(ctx, sqlc.CreateInstalledPackageParams{
-		ProfileID:        profile.ID,
-		SourceID:         source.ID,
-		SourceRevisionID: revision.ID,
-		Attr:             "hello",
-		Name:             "hello",
-		Version:          "2.12.2",
-		OutputsJson:      `{"out":"/nix/store/hello"}`,
-		DrvPath:          "/nix/store/hello.drv",
-		StorePathsJson:   `{"out":"/nix/store/hello"}`,
-		Reason:           "user",
-		Priority:         0,
-		UpgradePolicy:    "follow-source",
-		State:            "installed",
+	pkg, err := queries.CreatePackage(ctx, sqlc.CreatePackageParams{
+		FlakeID:     flake.ID,
+		LicenseID:   sql.NullInt64{Int64: license.ID, Valid: true},
+		Attr:        "hello",
+		Name:        "hello",
+		Description: "GNU Hello",
+		Version:     "2.12.2",
+		Outputs:     sqlc.StringList{"out"},
 	})
 	if err != nil {
-		t.Fatalf("CreateInstalledPackage() error = %v", err)
+		t.Fatalf("CreatePackage() error = %v", err)
+	}
+	if len(pkg.Outputs) != 1 || pkg.Outputs[0] != "out" {
+		t.Fatalf("package outputs = %#v, want [out]", pkg.Outputs)
 	}
 
-	packages, err := queries.ListInstalledPackagesByProfile(ctx, profile.ID)
+	if err := queries.LinkPackagePlatform(ctx, sqlc.LinkPackagePlatformParams{
+		PackageID:  pkg.ID,
+		PlatformID: platform.ID,
+	}); err != nil {
+		t.Fatalf("LinkPackagePlatform() error = %v", err)
+	}
+
+	packagePlatforms, err := queries.ListPackagePlatforms(ctx, pkg.ID)
 	if err != nil {
-		t.Fatalf("ListInstalledPackagesByProfile() error = %v", err)
+		t.Fatalf("ListPackagePlatforms() error = %v", err)
 	}
-	if len(packages) != 1 || packages[0].ID != installed.ID {
-		t.Fatalf("ListInstalledPackagesByProfile() = %#v, want installed package", packages)
+	if len(packagePlatforms) != 1 || packagePlatforms[0].ID != platform.ID {
+		t.Fatalf("ListPackagePlatforms() = %#v, want linked platform", packagePlatforms)
 	}
 
-	updatedPackage, err := queries.UpdateInstalledPackageState(ctx, sqlc.UpdateInstalledPackageStateParams{
-		State: "removed",
-		ID:    installed.ID,
+	platformPackages, err := queries.ListPackagesByPlatform(ctx, platform.ID)
+	if err != nil {
+		t.Fatalf("ListPackagesByPlatform() error = %v", err)
+	}
+	if len(platformPackages) != 1 || platformPackages[0].ID != pkg.ID {
+		t.Fatalf("ListPackagesByPlatform() = %#v, want linked package", platformPackages)
+	}
+
+	profilePackage, err := queries.CreateProfilePackage(ctx, sqlc.CreateProfilePackageParams{
+		ProfileID:  profile.ID,
+		PackageID:  pkg.ID,
+		PlatformID: platform.ID,
+		OutputName: "out",
+		DrvPath:    "/nix/store/hello.drv",
+		StorePath:  "/nix/store/hello",
 	})
 	if err != nil {
-		t.Fatalf("UpdateInstalledPackageState() error = %v", err)
-	}
-	if updatedPackage.State != "removed" {
-		t.Fatalf("updated package state = %q, want removed", updatedPackage.State)
+		t.Fatalf("CreateProfilePackage() error = %v", err)
 	}
 
-	transaction, err := queries.CreateTransaction(ctx, sqlc.CreateTransactionParams{
-		Kind:         "install",
-		ProfileID:    sql.NullInt64{Int64: profile.ID, Valid: true},
-		State:        "planned",
-		MetadataJson: `{}`,
+	profilePackages, err := queries.ListProfilePackages(ctx, profile.ID)
+	if err != nil {
+		t.Fatalf("ListProfilePackages() error = %v", err)
+	}
+	if len(profilePackages) != 1 || profilePackages[0].ID != profilePackage.ID {
+		t.Fatalf("ListProfilePackages() = %#v, want installed profile package", profilePackages)
+	}
+
+	materializedPath := filepath.Join(profile.Path, "bin", "hello")
+	file, err := queries.CreateFile(ctx, sqlc.CreateFileParams{
+		ProfilePackageID: profilePackage.ID,
+		Executable:       1,
+		RelativePath:     "bin/hello",
+		MaterializedPath: materializedPath,
+		StorePath:        "/nix/store/hello/bin/hello",
 	})
 	if err != nil {
-		t.Fatalf("CreateTransaction() error = %v", err)
+		t.Fatalf("CreateFile() error = %v", err)
 	}
 
-	unfinished, err := queries.ListUnfinishedTransactions(ctx)
+	fileByPath, err := queries.GetFileByMaterializedPath(ctx, materializedPath)
 	if err != nil {
-		t.Fatalf("ListUnfinishedTransactions() error = %v", err)
+		t.Fatalf("GetFileByMaterializedPath() error = %v", err)
 	}
-	if len(unfinished) != 1 || unfinished[0].ID != transaction.ID {
-		t.Fatalf("ListUnfinishedTransactions() = %#v, want planned transaction", unfinished)
+	if fileByPath.ID != file.ID {
+		t.Fatalf("file id = %d, want %d", fileByPath.ID, file.ID)
 	}
 
-	item, err := queries.AddTransactionItem(ctx, sqlc.AddTransactionItemParams{
-		TransactionID: transaction.ID,
-		Action:        "install",
-		PackageID:     sql.NullInt64{Int64: installed.ID, Valid: true},
-		OldJson:       `{}`,
-		NewJson:       `{"attr":"hello"}`,
-		State:         "planned",
-		Error:         "",
-	})
+	filesByPackage, err := queries.ListFilesByProfilePackage(ctx, profilePackage.ID)
 	if err != nil {
-		t.Fatalf("AddTransactionItem() error = %v", err)
+		t.Fatalf("ListFilesByProfilePackage() error = %v", err)
+	}
+	if len(filesByPackage) != 1 || filesByPackage[0].ID != file.ID {
+		t.Fatalf("ListFilesByProfilePackage() = %#v, want materialized file", filesByPackage)
 	}
 
-	item, err = queries.UpdateTransactionItemState(ctx, sqlc.UpdateTransactionItemStateParams{
-		State: "succeeded",
-		Error: "",
-		ID:    item.ID,
-	})
+	filesByProfile, err := queries.ListFilesByProfile(ctx, profile.ID)
 	if err != nil {
-		t.Fatalf("UpdateTransactionItemState() error = %v", err)
+		t.Fatalf("ListFilesByProfile() error = %v", err)
 	}
-	if item.State != "succeeded" {
-		t.Fatalf("transaction item state = %q, want succeeded", item.State)
+	if len(filesByProfile) != 1 || filesByProfile[0].ID != file.ID {
+		t.Fatalf("ListFilesByProfile() = %#v, want materialized file", filesByProfile)
 	}
 
-	transaction, err = queries.UpdateTransactionState(ctx, sqlc.UpdateTransactionStateParams{
-		State:      "succeeded",
-		FinishedAt: sql.NullInt64{Int64: transaction.StartedAt + 1, Valid: true},
-		Error:      "",
-		ID:         transaction.ID,
-	})
-	if err != nil {
-		t.Fatalf("UpdateTransactionState() error = %v", err)
-	}
-	if transaction.State != "succeeded" {
-		t.Fatalf("transaction state = %q, want succeeded", transaction.State)
+	if err := queries.DeleteFilesByProfilePackage(ctx, profilePackage.ID); err != nil {
+		t.Fatalf("DeleteFilesByProfilePackage() error = %v", err)
 	}
 
-	unfinished, err = queries.ListUnfinishedTransactions(ctx)
+	filesByPackage, err = queries.ListFilesByProfilePackage(ctx, profilePackage.ID)
 	if err != nil {
-		t.Fatalf("ListUnfinishedTransactions() after finish error = %v", err)
+		t.Fatalf("ListFilesByProfilePackage() after delete error = %v", err)
 	}
-	if len(unfinished) != 0 {
-		t.Fatalf("ListUnfinishedTransactions() after finish = %#v, want empty", unfinished)
-	}
-
-	root, err := queries.UpsertGCRoot(ctx, sqlc.UpsertGCRootParams{
-		ProfileID:          profile.ID,
-		InstalledPackageID: installed.ID,
-		OutputName:         "out",
-		RootPath:           filepath.Join(t.TempDir(), "hello-root"),
-		StorePath:          "/nix/store/hello",
-		State:              "active",
-	})
-	if err != nil {
-		t.Fatalf("UpsertGCRoot() error = %v", err)
-	}
-
-	root, err = queries.UpdateGCRootState(ctx, sqlc.UpdateGCRootStateParams{
-		State: "stale",
-		ID:    root.ID,
-	})
-	if err != nil {
-		t.Fatalf("UpdateGCRootState() error = %v", err)
-	}
-	if root.State != "stale" {
-		t.Fatalf("gc root state = %q, want stale", root.State)
-	}
-
-	roots, err := queries.ListGCRootsByProfile(ctx, profile.ID)
-	if err != nil {
-		t.Fatalf("ListGCRootsByProfile() error = %v", err)
-	}
-	if len(roots) != 1 || roots[0].ID != root.ID {
-		t.Fatalf("ListGCRootsByProfile() = %#v, want gc root", roots)
+	if len(filesByPackage) != 0 {
+		t.Fatalf("ListFilesByProfilePackage() after delete = %#v, want empty", filesByPackage)
 	}
 }
 
@@ -268,10 +247,10 @@ func TestWithTxCommitsAndRollsBack(t *testing.T) {
 
 	if err := st.WithTx(ctx, func(queries *sqlc.Queries) error {
 		_, err := queries.CreateProfile(ctx, sqlc.CreateProfileParams{
-			Kind:           "user",
-			Name:           "committed",
-			Path:           "/tmp/committed",
-			ActiveRevision: "",
+			Kind:  "user",
+			Name:  "committed",
+			Owner: "sunder",
+			Path:  "/tmp/committed",
 		})
 		return err
 	}); err != nil {
@@ -288,10 +267,10 @@ func TestWithTxCommitsAndRollsBack(t *testing.T) {
 	errRollback := errors.New("rollback")
 	if err := st.WithTx(ctx, func(queries *sqlc.Queries) error {
 		_, err := queries.CreateProfile(ctx, sqlc.CreateProfileParams{
-			Kind:           "user",
-			Name:           "rolled-back",
-			Path:           "/tmp/rolled-back",
-			ActiveRevision: "",
+			Kind:  "user",
+			Name:  "rolled-back",
+			Owner: "sunder",
+			Path:  "/tmp/rolled-back",
 		})
 		if err != nil {
 			return err

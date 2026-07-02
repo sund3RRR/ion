@@ -13,44 +13,44 @@ const createProfile = `-- name: CreateProfile :one
 INSERT INTO profiles (
     kind,
     name,
-    path,
-    active_revision
+    owner,
+    path
 ) VALUES (
     ?,
     ?,
     ?,
     ?
-) RETURNING id, kind, name, path, active_revision, created_at
+) RETURNING id, kind, name, owner, path, created_at
 `
 
 type CreateProfileParams struct {
-	Kind           string `json:"kind"`
-	Name           string `json:"name"`
-	Path           string `json:"path"`
-	ActiveRevision string `json:"active_revision"`
+	Kind  string `json:"kind"`
+	Name  string `json:"name"`
+	Owner string `json:"owner"`
+	Path  string `json:"path"`
 }
 
 func (q *Queries) CreateProfile(ctx context.Context, arg CreateProfileParams) (Profile, error) {
 	row := q.db.QueryRowContext(ctx, createProfile,
 		arg.Kind,
 		arg.Name,
+		arg.Owner,
 		arg.Path,
-		arg.ActiveRevision,
 	)
 	var i Profile
 	err := row.Scan(
 		&i.ID,
 		&i.Kind,
 		&i.Name,
+		&i.Owner,
 		&i.Path,
-		&i.ActiveRevision,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getProfile = `-- name: GetProfile :one
-SELECT id, kind, name, path, active_revision, created_at FROM profiles
+SELECT id, kind, name, owner, path, created_at FROM profiles
 WHERE id = ?
 `
 
@@ -61,15 +61,15 @@ func (q *Queries) GetProfile(ctx context.Context, id int64) (Profile, error) {
 		&i.ID,
 		&i.Kind,
 		&i.Name,
+		&i.Owner,
 		&i.Path,
-		&i.ActiveRevision,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getProfileByKindName = `-- name: GetProfileByKindName :one
-SELECT id, kind, name, path, active_revision, created_at FROM profiles
+SELECT id, kind, name, owner, path, created_at FROM profiles
 WHERE kind = ? AND name = ?
 `
 
@@ -85,16 +85,16 @@ func (q *Queries) GetProfileByKindName(ctx context.Context, arg GetProfileByKind
 		&i.ID,
 		&i.Kind,
 		&i.Name,
+		&i.Owner,
 		&i.Path,
-		&i.ActiveRevision,
 		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const listProfiles = `-- name: ListProfiles :many
-SELECT id, kind, name, path, active_revision, created_at FROM profiles
-ORDER BY kind, name
+SELECT id, kind, name, owner, path, created_at FROM profiles
+ORDER BY kind, owner, name
 `
 
 func (q *Queries) ListProfiles(ctx context.Context) ([]Profile, error) {
@@ -110,8 +110,8 @@ func (q *Queries) ListProfiles(ctx context.Context) ([]Profile, error) {
 			&i.ID,
 			&i.Kind,
 			&i.Name,
+			&i.Owner,
 			&i.Path,
-			&i.ActiveRevision,
 			&i.CreatedAt,
 		); err != nil {
 			return nil, err
@@ -127,28 +127,38 @@ func (q *Queries) ListProfiles(ctx context.Context) ([]Profile, error) {
 	return items, nil
 }
 
-const updateProfileActiveRevision = `-- name: UpdateProfileActiveRevision :one
-UPDATE profiles
-SET active_revision = ?
-WHERE id = ?
-RETURNING id, kind, name, path, active_revision, created_at
+const listProfilesByOwner = `-- name: ListProfilesByOwner :many
+SELECT id, kind, name, owner, path, created_at FROM profiles
+WHERE owner = ?
+ORDER BY kind, name
 `
 
-type UpdateProfileActiveRevisionParams struct {
-	ActiveRevision string `json:"active_revision"`
-	ID             int64  `json:"id"`
-}
-
-func (q *Queries) UpdateProfileActiveRevision(ctx context.Context, arg UpdateProfileActiveRevisionParams) (Profile, error) {
-	row := q.db.QueryRowContext(ctx, updateProfileActiveRevision, arg.ActiveRevision, arg.ID)
-	var i Profile
-	err := row.Scan(
-		&i.ID,
-		&i.Kind,
-		&i.Name,
-		&i.Path,
-		&i.ActiveRevision,
-		&i.CreatedAt,
-	)
-	return i, err
+func (q *Queries) ListProfilesByOwner(ctx context.Context, owner string) ([]Profile, error) {
+	rows, err := q.db.QueryContext(ctx, listProfilesByOwner, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Profile{}
+	for rows.Next() {
+		var i Profile
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.Name,
+			&i.Owner,
+			&i.Path,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
