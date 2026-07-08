@@ -18,9 +18,17 @@ type File struct {
 }
 
 type Flake struct {
+	ID        int64  `json:"id"`
+	Owner     string `json:"owner"`
+	Alias     string `json:"alias"`
+	FlakeRef  string `json:"flake_ref"`
+	CreatedAt int64  `json:"created_at"`
+	UpdatedAt int64  `json:"updated_at"`
+}
+
+type FlakeRevision struct {
 	ID          int64  `json:"id"`
-	Alias       string `json:"alias"`
-	FlakeRef    string `json:"flake_ref"`
+	FlakeID     int64  `json:"flake_id"`
 	LockJson    string `json:"lock_json"`
 	Fingerprint string `json:"fingerprint"`
 	CreatedAt   int64  `json:"created_at"`
@@ -35,16 +43,16 @@ type License struct {
 }
 
 type Package struct {
-	ID          int64         `json:"id"`
-	FlakeID     int64         `json:"flake_id"`
-	LicenseID   sql.NullInt64 `json:"license_id"`
-	Attr        string        `json:"attr"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	Version     string        `json:"version"`
-	Outputs     StringList    `json:"outputs"`
-	CreatedAt   int64         `json:"created_at"`
-	UpdatedAt   int64         `json:"updated_at"`
+	ID              int64         `json:"id"`
+	FlakeRevisionID int64         `json:"flake_revision_id"`
+	LicenseID       sql.NullInt64 `json:"license_id"`
+	Attr            string        `json:"attr"`
+	Name            string        `json:"name"`
+	Description     string        `json:"description"`
+	Version         string        `json:"version"`
+	Outputs         StringList    `json:"outputs"`
+	CreatedAt       int64         `json:"created_at"`
+	UpdatedAt       int64         `json:"updated_at"`
 }
 
 type PackagePlatform struct {

@@ -33,3 +33,7 @@ ORDER BY files.materialized_path;
 -- name: DeleteFilesByProfilePackage :exec
 DELETE FROM files
 WHERE profile_package_id = ?;
+
+-- name: DeleteFile :exec
+DELETE FROM files
+WHERE id = ?;

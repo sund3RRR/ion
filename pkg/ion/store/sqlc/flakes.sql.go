@@ -11,37 +11,60 @@ import (
 
 const createFlake = `-- name: CreateFlake :one
 INSERT INTO flakes (
+    owner,
     alias,
-    flake_ref,
+    flake_ref
+) VALUES (
+    ?,
+    ?,
+    ?
+) RETURNING id, owner, alias, flake_ref, created_at, updated_at
+`
+
+type CreateFlakeParams struct {
+	Owner    string `json:"owner"`
+	Alias    string `json:"alias"`
+	FlakeRef string `json:"flake_ref"`
+}
+
+func (q *Queries) CreateFlake(ctx context.Context, arg CreateFlakeParams) (Flake, error) {
+	row := q.db.QueryRowContext(ctx, createFlake, arg.Owner, arg.Alias, arg.FlakeRef)
+	var i Flake
+	err := row.Scan(
+		&i.ID,
+		&i.Owner,
+		&i.Alias,
+		&i.FlakeRef,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const createFlakeRevision = `-- name: CreateFlakeRevision :one
+INSERT INTO flake_revisions (
+    flake_id,
     lock_json,
     fingerprint
 ) VALUES (
     ?,
     ?,
-    ?,
     ?
-) RETURNING id, alias, flake_ref, lock_json, fingerprint, created_at
+) RETURNING id, flake_id, lock_json, fingerprint, created_at
 `
 
-type CreateFlakeParams struct {
-	Alias       string `json:"alias"`
-	FlakeRef    string `json:"flake_ref"`
+type CreateFlakeRevisionParams struct {
+	FlakeID     int64  `json:"flake_id"`
 	LockJson    string `json:"lock_json"`
 	Fingerprint string `json:"fingerprint"`
 }
 
-func (q *Queries) CreateFlake(ctx context.Context, arg CreateFlakeParams) (Flake, error) {
-	row := q.db.QueryRowContext(ctx, createFlake,
-		arg.Alias,
-		arg.FlakeRef,
-		arg.LockJson,
-		arg.Fingerprint,
-	)
-	var i Flake
+func (q *Queries) CreateFlakeRevision(ctx context.Context, arg CreateFlakeRevisionParams) (FlakeRevision, error) {
+	row := q.db.QueryRowContext(ctx, createFlakeRevision, arg.FlakeID, arg.LockJson, arg.Fingerprint)
+	var i FlakeRevision
 	err := row.Scan(
 		&i.ID,
-		&i.Alias,
-		&i.FlakeRef,
+		&i.FlakeID,
 		&i.LockJson,
 		&i.Fingerprint,
 		&i.CreatedAt,
@@ -50,7 +73,7 @@ func (q *Queries) CreateFlake(ctx context.Context, arg CreateFlakeParams) (Flake
 }
 
 const getFlake = `-- name: GetFlake :one
-SELECT id, alias, flake_ref, lock_json, fingerprint, created_at FROM flakes
+SELECT id, owner, alias, flake_ref, created_at, updated_at FROM flakes
 WHERE id = ?
 `
 
@@ -59,32 +82,50 @@ func (q *Queries) GetFlake(ctx context.Context, id int64) (Flake, error) {
 	var i Flake
 	err := row.Scan(
 		&i.ID,
+		&i.Owner,
 		&i.Alias,
 		&i.FlakeRef,
-		&i.LockJson,
-		&i.Fingerprint,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
-const getFlakeByAliasFingerprint = `-- name: GetFlakeByAliasFingerprint :one
-SELECT id, alias, flake_ref, lock_json, fingerprint, created_at FROM flakes
-WHERE alias = ? AND fingerprint = ?
+const getFlakeByOwnerAlias = `-- name: GetFlakeByOwnerAlias :one
+SELECT id, owner, alias, flake_ref, created_at, updated_at FROM flakes
+WHERE owner = ? AND alias = ?
 `
 
-type GetFlakeByAliasFingerprintParams struct {
-	Alias       string `json:"alias"`
-	Fingerprint string `json:"fingerprint"`
+type GetFlakeByOwnerAliasParams struct {
+	Owner string `json:"owner"`
+	Alias string `json:"alias"`
 }
 
-func (q *Queries) GetFlakeByAliasFingerprint(ctx context.Context, arg GetFlakeByAliasFingerprintParams) (Flake, error) {
-	row := q.db.QueryRowContext(ctx, getFlakeByAliasFingerprint, arg.Alias, arg.Fingerprint)
+func (q *Queries) GetFlakeByOwnerAlias(ctx context.Context, arg GetFlakeByOwnerAliasParams) (Flake, error) {
+	row := q.db.QueryRowContext(ctx, getFlakeByOwnerAlias, arg.Owner, arg.Alias)
 	var i Flake
 	err := row.Scan(
 		&i.ID,
+		&i.Owner,
 		&i.Alias,
 		&i.FlakeRef,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getFlakeRevision = `-- name: GetFlakeRevision :one
+SELECT id, flake_id, lock_json, fingerprint, created_at FROM flake_revisions
+WHERE id = ?
+`
+
+func (q *Queries) GetFlakeRevision(ctx context.Context, id int64) (FlakeRevision, error) {
+	row := q.db.QueryRowContext(ctx, getFlakeRevision, id)
+	var i FlakeRevision
+	err := row.Scan(
+		&i.ID,
+		&i.FlakeID,
 		&i.LockJson,
 		&i.Fingerprint,
 		&i.CreatedAt,
@@ -92,24 +133,67 @@ func (q *Queries) GetFlakeByAliasFingerprint(ctx context.Context, arg GetFlakeBy
 	return i, err
 }
 
-const listFlakes = `-- name: ListFlakes :many
-SELECT id, alias, flake_ref, lock_json, fingerprint, created_at FROM flakes
-ORDER BY alias, id DESC
+const getFlakeRevisionByFingerprint = `-- name: GetFlakeRevisionByFingerprint :one
+SELECT id, flake_id, lock_json, fingerprint, created_at FROM flake_revisions
+WHERE flake_id = ? AND fingerprint = ?
 `
 
-func (q *Queries) ListFlakes(ctx context.Context) ([]Flake, error) {
-	rows, err := q.db.QueryContext(ctx, listFlakes)
+type GetFlakeRevisionByFingerprintParams struct {
+	FlakeID     int64  `json:"flake_id"`
+	Fingerprint string `json:"fingerprint"`
+}
+
+func (q *Queries) GetFlakeRevisionByFingerprint(ctx context.Context, arg GetFlakeRevisionByFingerprintParams) (FlakeRevision, error) {
+	row := q.db.QueryRowContext(ctx, getFlakeRevisionByFingerprint, arg.FlakeID, arg.Fingerprint)
+	var i FlakeRevision
+	err := row.Scan(
+		&i.ID,
+		&i.FlakeID,
+		&i.LockJson,
+		&i.Fingerprint,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getLatestFlakeRevision = `-- name: GetLatestFlakeRevision :one
+SELECT id, flake_id, lock_json, fingerprint, created_at FROM flake_revisions
+WHERE flake_id = ?
+ORDER BY created_at DESC, id DESC
+LIMIT 1
+`
+
+func (q *Queries) GetLatestFlakeRevision(ctx context.Context, flakeID int64) (FlakeRevision, error) {
+	row := q.db.QueryRowContext(ctx, getLatestFlakeRevision, flakeID)
+	var i FlakeRevision
+	err := row.Scan(
+		&i.ID,
+		&i.FlakeID,
+		&i.LockJson,
+		&i.Fingerprint,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const listFlakeRevisions = `-- name: ListFlakeRevisions :many
+SELECT id, flake_id, lock_json, fingerprint, created_at FROM flake_revisions
+WHERE flake_id = ?
+ORDER BY created_at DESC, id DESC
+`
+
+func (q *Queries) ListFlakeRevisions(ctx context.Context, flakeID int64) ([]FlakeRevision, error) {
+	rows, err := q.db.QueryContext(ctx, listFlakeRevisions, flakeID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []Flake{}
+	items := []FlakeRevision{}
 	for rows.Next() {
-		var i Flake
+		var i FlakeRevision
 		if err := rows.Scan(
 			&i.ID,
-			&i.Alias,
-			&i.FlakeRef,
+			&i.FlakeID,
 			&i.LockJson,
 			&i.Fingerprint,
 			&i.CreatedAt,
@@ -127,14 +211,13 @@ func (q *Queries) ListFlakes(ctx context.Context) ([]Flake, error) {
 	return items, nil
 }
 
-const listFlakesByAlias = `-- name: ListFlakesByAlias :many
-SELECT id, alias, flake_ref, lock_json, fingerprint, created_at FROM flakes
-WHERE alias = ?
-ORDER BY id DESC
+const listFlakes = `-- name: ListFlakes :many
+SELECT id, owner, alias, flake_ref, created_at, updated_at FROM flakes
+ORDER BY owner, alias
 `
 
-func (q *Queries) ListFlakesByAlias(ctx context.Context, alias string) ([]Flake, error) {
-	rows, err := q.db.QueryContext(ctx, listFlakesByAlias, alias)
+func (q *Queries) ListFlakes(ctx context.Context) ([]Flake, error) {
+	rows, err := q.db.QueryContext(ctx, listFlakes)
 	if err != nil {
 		return nil, err
 	}
@@ -144,11 +227,47 @@ func (q *Queries) ListFlakesByAlias(ctx context.Context, alias string) ([]Flake,
 		var i Flake
 		if err := rows.Scan(
 			&i.ID,
+			&i.Owner,
 			&i.Alias,
 			&i.FlakeRef,
-			&i.LockJson,
-			&i.Fingerprint,
 			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listFlakesByOwner = `-- name: ListFlakesByOwner :many
+SELECT id, owner, alias, flake_ref, created_at, updated_at FROM flakes
+WHERE owner = ?
+ORDER BY alias
+`
+
+func (q *Queries) ListFlakesByOwner(ctx context.Context, owner string) ([]Flake, error) {
+	rows, err := q.db.QueryContext(ctx, listFlakesByOwner, owner)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Flake{}
+	for rows.Next() {
+		var i Flake
+		if err := rows.Scan(
+			&i.ID,
+			&i.Owner,
+			&i.Alias,
+			&i.FlakeRef,
+			&i.CreatedAt,
+			&i.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}

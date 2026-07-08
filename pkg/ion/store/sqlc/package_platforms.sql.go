@@ -60,7 +60,7 @@ func (q *Queries) ListPackagePlatforms(ctx context.Context, packageID int64) ([]
 }
 
 const listPackagesByPlatform = `-- name: ListPackagesByPlatform :many
-SELECT packages.id, packages.flake_id, packages.license_id, packages.attr, packages.name, packages.description, packages.version, packages.outputs, packages.created_at, packages.updated_at FROM packages
+SELECT packages.id, packages.flake_revision_id, packages.license_id, packages.attr, packages.name, packages.description, packages.version, packages.outputs, packages.created_at, packages.updated_at FROM packages
 JOIN package_platforms ON package_platforms.package_id = packages.id
 WHERE package_platforms.platform_id = ?
 ORDER BY packages.name, packages.attr
@@ -77,7 +77,7 @@ func (q *Queries) ListPackagesByPlatform(ctx context.Context, platformID int64) 
 		var i Package
 		if err := rows.Scan(
 			&i.ID,
-			&i.FlakeID,
+			&i.FlakeRevisionID,
 			&i.LicenseID,
 			&i.Attr,
 			&i.Name,

@@ -12,7 +12,7 @@ import (
 
 const createPackage = `-- name: CreatePackage :one
 INSERT INTO packages (
-    flake_id,
+    flake_revision_id,
     license_id,
     attr,
     name,
@@ -27,22 +27,22 @@ INSERT INTO packages (
     ?,
     ?,
     ?
-) RETURNING id, flake_id, license_id, attr, name, description, version, outputs, created_at, updated_at
+) RETURNING id, flake_revision_id, license_id, attr, name, description, version, outputs, created_at, updated_at
 `
 
 type CreatePackageParams struct {
-	FlakeID     int64         `json:"flake_id"`
-	LicenseID   sql.NullInt64 `json:"license_id"`
-	Attr        string        `json:"attr"`
-	Name        string        `json:"name"`
-	Description string        `json:"description"`
-	Version     string        `json:"version"`
-	Outputs     StringList    `json:"outputs"`
+	FlakeRevisionID int64         `json:"flake_revision_id"`
+	LicenseID       sql.NullInt64 `json:"license_id"`
+	Attr            string        `json:"attr"`
+	Name            string        `json:"name"`
+	Description     string        `json:"description"`
+	Version         string        `json:"version"`
+	Outputs         StringList    `json:"outputs"`
 }
 
 func (q *Queries) CreatePackage(ctx context.Context, arg CreatePackageParams) (Package, error) {
 	row := q.db.QueryRowContext(ctx, createPackage,
-		arg.FlakeID,
+		arg.FlakeRevisionID,
 		arg.LicenseID,
 		arg.Attr,
 		arg.Name,
@@ -53,7 +53,42 @@ func (q *Queries) CreatePackage(ctx context.Context, arg CreatePackageParams) (P
 	var i Package
 	err := row.Scan(
 		&i.ID,
-		&i.FlakeID,
+		&i.FlakeRevisionID,
+		&i.LicenseID,
+		&i.Attr,
+		&i.Name,
+		&i.Description,
+		&i.Version,
+		&i.Outputs,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getLatestPackageByFlakeAlias = `-- name: GetLatestPackageByFlakeAlias :one
+SELECT packages.id, packages.flake_revision_id, packages.license_id, packages.attr, packages.name, packages.description, packages.version, packages.outputs, packages.created_at, packages.updated_at FROM packages
+JOIN flake_revisions ON flake_revisions.id = packages.flake_revision_id
+JOIN flakes ON flakes.id = flake_revisions.flake_id
+WHERE flakes.owner = ?
+  AND flakes.alias = ?
+  AND packages.attr = ?
+ORDER BY flake_revisions.created_at DESC, flake_revisions.id DESC
+LIMIT 1
+`
+
+type GetLatestPackageByFlakeAliasParams struct {
+	Owner string `json:"owner"`
+	Alias string `json:"alias"`
+	Attr  string `json:"attr"`
+}
+
+func (q *Queries) GetLatestPackageByFlakeAlias(ctx context.Context, arg GetLatestPackageByFlakeAliasParams) (Package, error) {
+	row := q.db.QueryRowContext(ctx, getLatestPackageByFlakeAlias, arg.Owner, arg.Alias, arg.Attr)
+	var i Package
+	err := row.Scan(
+		&i.ID,
+		&i.FlakeRevisionID,
 		&i.LicenseID,
 		&i.Attr,
 		&i.Name,
@@ -67,7 +102,7 @@ func (q *Queries) CreatePackage(ctx context.Context, arg CreatePackageParams) (P
 }
 
 const getPackage = `-- name: GetPackage :one
-SELECT id, flake_id, license_id, attr, name, description, version, outputs, created_at, updated_at FROM packages
+SELECT id, flake_revision_id, license_id, attr, name, description, version, outputs, created_at, updated_at FROM packages
 WHERE id = ?
 `
 
@@ -76,7 +111,7 @@ func (q *Queries) GetPackage(ctx context.Context, id int64) (Package, error) {
 	var i Package
 	err := row.Scan(
 		&i.ID,
-		&i.FlakeID,
+		&i.FlakeRevisionID,
 		&i.LicenseID,
 		&i.Attr,
 		&i.Name,
@@ -89,22 +124,22 @@ func (q *Queries) GetPackage(ctx context.Context, id int64) (Package, error) {
 	return i, err
 }
 
-const getPackageByFlakeAttr = `-- name: GetPackageByFlakeAttr :one
-SELECT id, flake_id, license_id, attr, name, description, version, outputs, created_at, updated_at FROM packages
-WHERE flake_id = ? AND attr = ?
+const getPackageByRevisionAttr = `-- name: GetPackageByRevisionAttr :one
+SELECT id, flake_revision_id, license_id, attr, name, description, version, outputs, created_at, updated_at FROM packages
+WHERE flake_revision_id = ? AND attr = ?
 `
 
-type GetPackageByFlakeAttrParams struct {
-	FlakeID int64  `json:"flake_id"`
-	Attr    string `json:"attr"`
+type GetPackageByRevisionAttrParams struct {
+	FlakeRevisionID int64  `json:"flake_revision_id"`
+	Attr            string `json:"attr"`
 }
 
-func (q *Queries) GetPackageByFlakeAttr(ctx context.Context, arg GetPackageByFlakeAttrParams) (Package, error) {
-	row := q.db.QueryRowContext(ctx, getPackageByFlakeAttr, arg.FlakeID, arg.Attr)
+func (q *Queries) GetPackageByRevisionAttr(ctx context.Context, arg GetPackageByRevisionAttrParams) (Package, error) {
+	row := q.db.QueryRowContext(ctx, getPackageByRevisionAttr, arg.FlakeRevisionID, arg.Attr)
 	var i Package
 	err := row.Scan(
 		&i.ID,
-		&i.FlakeID,
+		&i.FlakeRevisionID,
 		&i.LicenseID,
 		&i.Attr,
 		&i.Name,
@@ -117,14 +152,14 @@ func (q *Queries) GetPackageByFlakeAttr(ctx context.Context, arg GetPackageByFla
 	return i, err
 }
 
-const listPackagesByFlake = `-- name: ListPackagesByFlake :many
-SELECT id, flake_id, license_id, attr, name, description, version, outputs, created_at, updated_at FROM packages
-WHERE flake_id = ?
+const listPackagesByRevision = `-- name: ListPackagesByRevision :many
+SELECT id, flake_revision_id, license_id, attr, name, description, version, outputs, created_at, updated_at FROM packages
+WHERE flake_revision_id = ?
 ORDER BY attr
 `
 
-func (q *Queries) ListPackagesByFlake(ctx context.Context, flakeID int64) ([]Package, error) {
-	rows, err := q.db.QueryContext(ctx, listPackagesByFlake, flakeID)
+func (q *Queries) ListPackagesByRevision(ctx context.Context, flakeRevisionID int64) ([]Package, error) {
+	rows, err := q.db.QueryContext(ctx, listPackagesByRevision, flakeRevisionID)
 	if err != nil {
 		return nil, err
 	}
@@ -134,7 +169,7 @@ func (q *Queries) ListPackagesByFlake(ctx context.Context, flakeID int64) ([]Pac
 		var i Package
 		if err := rows.Scan(
 			&i.ID,
-			&i.FlakeID,
+			&i.FlakeRevisionID,
 			&i.LicenseID,
 			&i.Attr,
 			&i.Name,
@@ -158,7 +193,7 @@ func (q *Queries) ListPackagesByFlake(ctx context.Context, flakeID int64) ([]Pac
 }
 
 const searchPackagesByName = `-- name: SearchPackagesByName :many
-SELECT id, flake_id, license_id, attr, name, description, version, outputs, created_at, updated_at FROM packages
+SELECT id, flake_revision_id, license_id, attr, name, description, version, outputs, created_at, updated_at FROM packages
 WHERE name LIKE ? OR attr LIKE ?
 ORDER BY name, attr
 LIMIT ?
@@ -181,7 +216,7 @@ func (q *Queries) SearchPackagesByName(ctx context.Context, arg SearchPackagesBy
 		var i Package
 		if err := rows.Scan(
 			&i.ID,
-			&i.FlakeID,
+			&i.FlakeRevisionID,
 			&i.LicenseID,
 			&i.Attr,
 			&i.Name,
@@ -213,7 +248,7 @@ SET license_id = ?,
     outputs = ?,
     updated_at = unixepoch()
 WHERE id = ?
-RETURNING id, flake_id, license_id, attr, name, description, version, outputs, created_at, updated_at
+RETURNING id, flake_revision_id, license_id, attr, name, description, version, outputs, created_at, updated_at
 `
 
 type UpdatePackageMetadataParams struct {
@@ -237,7 +272,7 @@ func (q *Queries) UpdatePackageMetadata(ctx context.Context, arg UpdatePackageMe
 	var i Package
 	err := row.Scan(
 		&i.ID,
-		&i.FlakeID,
+		&i.FlakeRevisionID,
 		&i.LicenseID,
 		&i.Attr,
 		&i.Name,

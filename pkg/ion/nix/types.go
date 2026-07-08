@@ -1,4 +1,15 @@
+// Package nix adapts gonix operations for ION package resolution and
+// realization.
 package nix
+
+type RealizedPackage struct {
+	OutputName string
+	StorePath  string
+	RealPath   string
+	Name       string
+	Hash       [20]byte
+	Package    Package
+}
 
 // Package describes one resolved package derivation.
 type Package struct {

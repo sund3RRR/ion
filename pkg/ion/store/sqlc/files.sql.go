@@ -49,6 +49,16 @@ func (q *Queries) CreateFile(ctx context.Context, arg CreateFileParams) (File, e
 	return i, err
 }
 
+const deleteFile = `-- name: DeleteFile :exec
+DELETE FROM files
+WHERE id = ?
+`
+
+func (q *Queries) DeleteFile(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteFile, id)
+	return err
+}
+
 const deleteFilesByProfilePackage = `-- name: DeleteFilesByProfilePackage :exec
 DELETE FROM files
 WHERE profile_package_id = ?

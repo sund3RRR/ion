@@ -11,6 +11,7 @@ import (
 
 	"github.com/pressly/goose/v3"
 
+	"github.com/sund3RRR/ion/pkg/domain"
 	"github.com/sund3RRR/ion/pkg/ion/store/migrations"
 	"github.com/sund3RRR/ion/pkg/ion/store/sqlc"
 
@@ -36,12 +37,12 @@ func WithoutMigrations() Option {
 // Store owns an ION SQLite database handle and sqlc query set.
 type Store struct {
 	db      *sql.DB
-	queries *sqlc.Queries
+	exacker *Exacker
 }
 
-// Open opens an ION SQLite store at path, creates its parent directory, and
+// New opens an ION SQLite store at path, creates its parent directory, and
 // applies embedded migrations unless disabled with WithoutMigrations.
-func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
+func New(ctx context.Context, path string, opts ...Option) (*Store, error) {
 	if path == "" {
 		return nil, errors.New("store: open: empty database path")
 	}
@@ -60,11 +61,9 @@ func Open(ctx context.Context, path string, opts ...Option) (*Store, error) {
 		return nil, fmt.Errorf("store: open database %q: %w", path, err)
 	}
 
-	db.SetMaxOpenConns(1)
-
 	store := &Store{
 		db:      db,
-		queries: sqlc.New(db),
+		exacker: NewExacker(sqlc.New(db)),
 	}
 
 	if err := db.PingContext(ctx); err != nil {
@@ -90,16 +89,6 @@ func (s *Store) Close() error {
 	return s.db.Close()
 }
 
-// DB returns the underlying SQLite database handle.
-func (s *Store) DB() *sql.DB {
-	return s.db
-}
-
-// Queries returns the sqlc-generated query set bound to the store database.
-func (s *Store) Queries() *sqlc.Queries {
-	return s.queries
-}
-
 // Migrate applies all embedded store migrations.
 func (s *Store) Migrate(ctx context.Context) error {
 	goose.SetBaseFS(migrations.FS)
@@ -115,20 +104,47 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return nil
 }
 
-// WithTx runs fn inside a SQLite transaction using sqlc queries bound to that
-// transaction. The transaction commits when fn returns nil and rolls back when
-// fn returns an error.
-func (s *Store) WithTx(ctx context.Context, fn func(*sqlc.Queries) error) error {
+func (s *Store) GetLatestFlakeRev(ctx context.Context, owner string, alias string) (*domain.FlakeRev, error) {
+	return s.exacker.GetLatestFlakeRev(ctx, owner, alias)
+}
+
+func (s *Store) GetPackage(ctx context.Context, flakeRev *domain.FlakeRev, attr string) (*domain.Package, error) {
+	return s.exacker.GetPackage(ctx, flakeRev, attr)
+}
+
+func (s *Store) GetProfilePackage(ctx context.Context, path string) (*domain.ProfilePackage, error) {
+	return s.exacker.GetProfilePackage(ctx, path)
+}
+
+func (s *Store) GetConflictedPackages(ctx context.Context, files []string) ([]*domain.InstalledSource, error) {
+	return s.exacker.GetConflictedPackages(ctx, files)
+}
+
+func (s *Store) GetProfile(ctx context.Context, name string, kind domain.ProfileKind) (*domain.Profile, error) {
+	return s.exacker.GetProfile(ctx, name, kind)
+}
+
+func (s *Store) DeleteProfilePackage(ctx context.Context, source *domain.InstalledSource) error {
+	return s.exacker.DeleteProfilePackage(ctx, source)
+}
+
+func (s *Store) ListProfilePackageFiles(ctx context.Context, source *domain.InstalledSource) ([]string, error) {
+	return s.exacker.ListProfilePackageFiles(ctx, source)
+}
+
+func (s *Store) CreateProfilePackage(ctx context.Context, source *domain.InstalledSource) error {
+	return s.exacker.CreateProfilePackage(ctx, source)
+}
+
+func (s *Store) ExecTx(ctx context.Context, fn func(exacker *Exacker) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("store: begin transaction: %w", err)
 	}
 
-	if err := fn(s.queries.WithTx(tx)); err != nil {
-		if rollbackErr := tx.Rollback(); rollbackErr != nil {
-			return fmt.Errorf("store: rollback transaction after error %w: %w", err, rollbackErr)
-		}
-		return err
+	if err := fn(NewExacker(sqlc.New(tx))); err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("store: exec transaction: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -143,6 +159,7 @@ func sqliteDSN(path string) string {
 	values.Set("_busy_timeout", "5000")
 	values.Set("_foreign_keys", "on")
 	values.Set("_journal_mode", "WAL")
+	values.Set("_txlock", "immediate")
 
 	return (&url.URL{
 		Scheme:   "file",

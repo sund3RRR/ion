@@ -1,12 +1,22 @@
 -- +goose Up
 CREATE TABLE flakes (
     id INTEGER PRIMARY KEY,
+    owner TEXT NOT NULL,
     alias TEXT NOT NULL,
     flake_ref TEXT NOT NULL,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE (owner, alias)
+);
+
+CREATE TABLE flake_revisions (
+    id INTEGER PRIMARY KEY,
+    flake_id INTEGER NOT NULL,
     lock_json TEXT NOT NULL CHECK (json_valid(lock_json)),
     fingerprint TEXT NOT NULL CHECK (fingerprint <> ''),
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    UNIQUE (alias, fingerprint)
+    FOREIGN KEY (flake_id) REFERENCES flakes(id) ON DELETE CASCADE,
+    UNIQUE (flake_id, fingerprint)
 );
 
 CREATE TABLE platforms (
@@ -25,7 +35,7 @@ CREATE TABLE licenses (
 
 CREATE TABLE packages (
     id INTEGER PRIMARY KEY,
-    flake_id INTEGER NOT NULL,
+    flake_revision_id INTEGER NOT NULL,
     license_id INTEGER,
     attr TEXT NOT NULL,
     name TEXT NOT NULL,
@@ -34,12 +44,13 @@ CREATE TABLE packages (
     outputs TEXT NOT NULL CHECK (json_valid(outputs) AND json_type(outputs) = 'array'),
     created_at INTEGER NOT NULL DEFAULT (unixepoch()),
     updated_at INTEGER NOT NULL DEFAULT (unixepoch()),
-    FOREIGN KEY (flake_id) REFERENCES flakes(id) ON DELETE CASCADE,
+    FOREIGN KEY (flake_revision_id) REFERENCES flake_revisions(id) ON DELETE CASCADE,
     FOREIGN KEY (license_id) REFERENCES licenses(id) ON DELETE SET NULL,
-    UNIQUE (attr, flake_id)
+    UNIQUE (attr, flake_revision_id)
 );
 
-CREATE INDEX idx_packages_flake_id ON packages(flake_id);
+CREATE INDEX idx_flake_revisions_flake_id ON flake_revisions(flake_id);
+CREATE INDEX idx_packages_flake_revision_id ON packages(flake_revision_id);
 CREATE INDEX idx_packages_license_id ON packages(license_id);
 
 CREATE TABLE package_platforms (
@@ -101,6 +112,17 @@ AFTER UPDATE OF license_id, name, description, version, outputs ON packages
 FOR EACH ROW
 BEGIN
     UPDATE packages
+    SET updated_at = unixepoch()
+    WHERE id = OLD.id;
+END;
+-- +goose StatementEnd
+
+-- +goose StatementBegin
+CREATE TRIGGER flakes_updated_at
+AFTER UPDATE OF owner, alias, flake_ref ON flakes
+FOR EACH ROW
+BEGIN
+    UPDATE flakes
     SET updated_at = unixepoch()
     WHERE id = OLD.id;
 END;
