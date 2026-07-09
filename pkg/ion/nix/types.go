@@ -2,17 +2,24 @@
 // realization.
 package nix
 
-type RealizedPackage struct {
+// RealizedPackage describes a resolved package and one realized output.
+type RealizedOutput struct {
+	// OutputName is the realized derivation output name.
 	OutputName string
-	StorePath  string
-	RealPath   string
-	Name       string
-	Hash       [20]byte
-	Package    Package
+	// StorePath is the canonical Nix store path for the output.
+	StorePath string
+	// RealPath is the resolved filesystem path for StorePath.
+	RealPath string
+	// DrvPath is the derivation store path to realize.
+	DrvPath string
+	// Name is the realized output name reported by Nix.
+	Name string
+	// Hash is the store hash of the realized output.
+	Hash [20]byte
 }
 
 // Package describes one resolved package derivation.
-type Package struct {
+type ResolvedPackage struct {
 	// Attr is the user-facing package attribute.
 	Attr string `json:"attr"`
 	// AttrPath is the exact flake output path that resolved successfully.

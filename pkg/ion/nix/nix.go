@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	"github.com/sund3RRR/gonix"
-	"github.com/sund3RRR/gonix/eval"
 	gonixflake "github.com/sund3RRR/gonix/flake"
 )
 
@@ -61,6 +60,11 @@ func New(config Config) (*Nix, error) {
 	}, nil
 }
 
+// System returns the Nix system used for package resolution and realization.
+func (n *Nix) System() string {
+	return n.system
+}
+
 // Close releases resources owned by n.
 func (n *Nix) Close() error {
 	return n.client.Close()
@@ -89,40 +93,63 @@ func (n *Nix) OpenLockedFlake(ctx context.Context, ref string, lockInfo *gonixfl
 	return flake, nil
 }
 
+// PullPackageRequest describes a package derivation output to realize.
 type PullPackageRequest struct {
-	Attr       string
-	System     string
+	// Attr is the package attribute to resolve.
+	Attr string
+	// System is the Nix system to resolve for.
+	System string
+	// OutputName is the derivation output name to realize.
 	OutputName string
 }
 
-func (n *Nix) PullPackage(ctx context.Context, flake *gonixflake.Flake, req PullPackageRequest) (*RealizedPackage, error) {
-	pkg, err := n.ResolvePackage(ctx, flake, req.Attr)
-	if err != nil {
-		return nil, fmt.Errorf("nix: resolve package: %w", err)
-	}
-
-	realized, err := n.client.RealizeOutput(ctx, pkg.DrvPath, req.OutputName)
+// RealizeOutput realizes outputName from drvPath.
+func (n *Nix) RealizeOutput(ctx context.Context, drvPath string, outputName string) (*RealizedOutput, error) {
+	realized, err := n.client.RealizeOutput(ctx, drvPath, outputName)
 	if err != nil {
 		return nil, fmt.Errorf("nix: realize derivation: %w", err)
 	}
 
-	return &RealizedPackage{
+	return &RealizedOutput{
 		OutputName: realized.OutputName,
 		StorePath:  realized.StorePath,
 		RealPath:   realized.RealPath,
+		DrvPath:    drvPath,
 		Name:       realized.Name,
 		Hash:       realized.Hash,
-		Package:    *pkg,
 	}, nil
 }
 
-func (n *Nix) RealizeOutput(ctx context.Context, drvPath string, outputName string) (gonix.RealizedOutput, error) {
-	return n.client.RealizeOutput(ctx, drvPath, outputName)
+type Derivation struct {
+	Path    string   `nix:"drvPath" validate:"required"`
+	Outputs []string `nix:"outputs"`
 }
 
-// ResolvePackage resolves package metadata from a locked source.
-func (n *Nix) ResolvePackage(ctx context.Context, flake *gonixflake.Flake, attr string) (*Package, error) {
-	pkg, err := n.resolvePackagePath(ctx, flake, attr, legacyAttrPath(attr, n.system))
+// CallDerivation evaluates expr as a Nix function and applies it to args,
+// passing each value as a Nix string, then returns the resulting
+// derivation's store path and declared output names.
+//
+// Arguments are passed as real Nix values through the gonix evaluator
+// (eval.String, eval.Attrs) rather than substituted into expr as text, so
+// arbitrary Go string values need no Nix-syntax escaping.
+func (n *Nix) CallDerivation(
+	ctx context.Context,
+	expr string,
+	args any,
+) (Derivation, error) {
+	var value Derivation
+	if err := n.client.EvalWithArgs(ctx, expr, args, &value); err != nil {
+		return Derivation{}, fmt.Errorf("nix: evaluate derivation function: %w", err)
+	}
+	if value.Path == "" {
+		return Derivation{}, errors.New("nix: evaluated derivation has empty drv path")
+	}
+
+	return value, nil
+}
+
+func (n *Nix) ResolvePackage(ctx context.Context, flake *gonixflake.Flake, attr string, system string) (*ResolvedPackage, error) {
+	pkg, err := n.resolvePackagePath(ctx, flake, attr, legacyAttrPath(attr, system), system)
 	if err == nil {
 		return pkg, nil
 	}
@@ -131,7 +158,7 @@ func (n *Nix) ResolvePackage(ctx context.Context, flake *gonixflake.Flake, attr 
 		return nil, fmt.Errorf("nix: resolve package path: %w", err)
 	}
 
-	pkg, err = n.resolvePackagePath(ctx, flake, attr, packageAttrPath(attr, n.system))
+	pkg, err = n.resolvePackagePath(ctx, flake, attr, packageAttrPath(attr, system), system)
 	if err == nil {
 		return pkg, nil
 	}
@@ -143,74 +170,21 @@ func (n *Nix) ResolvePackage(ctx context.Context, flake *gonixflake.Flake, attr 
 	return nil, ErrPkgNotFound
 }
 
-// System returns the Nix system used for package resolution and realization.
-func (n *Nix) System() string {
-	return n.system
-}
-
-// CallDerivation evaluates expr as a Nix function and applies it to args,
-// passing each value as a Nix string, then returns the resulting
-// derivation's store path and declared output names.
-//
-// Arguments are passed as real Nix values through the gonix evaluator
-// (eval.String, eval.Attrs) rather than substituted into expr as text, so
-// arbitrary Go string values need no Nix-syntax escaping.
-func (n *Nix) CallDerivation(ctx context.Context, expr string, args map[string]string) (drvPath string, outputs []string, err error) {
-	var value struct {
-		DrvPath string   `nix:"drvPath" validate:"required"`
-		Outputs []string `nix:"outputs"`
-	}
-
-	err = n.client.WithEvaluator(ctx, func(ev *eval.Evaluator) error {
-		fn, err := ev.EvalString(expr, "<gonix>")
-		if err != nil {
-			return fmt.Errorf("nix: evaluate function: %w", err)
-		}
-		defer fn.Close() //nolint:errcheck
-
-		attrs := make(map[string]eval.GoValue, len(args))
-		for name, v := range args {
-			attrs[name] = eval.String(v)
-		}
-
-		argsValue, err := ev.NewValue(eval.Attrs(attrs))
-		if err != nil {
-			return fmt.Errorf("nix: build function arguments: %w", err)
-		}
-		defer argsValue.Close() //nolint:errcheck
-
-		result, err := ev.Call(fn, argsValue)
-		if err != nil {
-			return fmt.Errorf("nix: call function: %w", err)
-		}
-		defer result.Close() //nolint:errcheck
-
-		return ev.Unmarshal(result, &value)
-	})
-	if err != nil {
-		return "", nil, fmt.Errorf("nix: evaluate derivation function: %w", err)
-	}
-	if value.DrvPath == "" {
-		return "", nil, errors.New("nix: evaluated derivation has empty drv path")
-	}
-
-	return value.DrvPath, value.Outputs, nil
-}
-
 func (n *Nix) resolvePackagePath(
 	ctx context.Context,
 	flake *gonixflake.Flake,
 	attr string,
 	path []string,
-) (*Package, error) {
-	type resolvedPackage struct {
+	system string,
+) (*ResolvedPackage, error) {
+	type resolvedValues struct {
 		Name    string   `nix:"name"`
 		Version string   `nix:"version"`
 		DrvPath string   `nix:"drvPath" validate:"required"`
 		Outputs []string `nix:"outputs"`
 	}
 
-	var value resolvedPackage
+	var value resolvedValues
 	if err := n.client.EvalFlakeOutput(ctx, flake, path, &value); err != nil {
 		return nil, fmt.Errorf("nix: evaluate package path %q: %w", strings.Join(path, "."), err)
 	}
@@ -218,10 +192,10 @@ func (n *Nix) resolvePackagePath(
 		return nil, errors.New("nix: resolved package has empty drv path")
 	}
 
-	return &Package{
+	return &ResolvedPackage{
 		Attr:        attr,
 		AttrPath:    append([]string(nil), path...),
-		System:      n.system,
+		System:      system,
 		Name:        value.Name,
 		Version:     value.Version,
 		DrvPath:     value.DrvPath,

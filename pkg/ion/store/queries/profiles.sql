@@ -19,6 +19,10 @@ WHERE id = ?;
 SELECT * FROM profiles
 WHERE kind = ? AND name = ?;
 
+-- name: GetProfileByKindOwnerName :one
+SELECT * FROM profiles
+WHERE kind = ? AND owner = ? AND name = ?;
+
 -- name: ListProfiles :many
 SELECT * FROM profiles
 ORDER BY kind, owner, name;

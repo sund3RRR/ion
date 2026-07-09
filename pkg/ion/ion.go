@@ -2,7 +2,6 @@ package ion
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 
@@ -72,14 +71,14 @@ type Conflict struct {
 // carries everything ApplyInstall needs to commit the installation without
 // repeating Nix work.
 type InstallPlan struct {
-	Profile        domain.Profile
-	Request        *InstallPackageRequest
-	FlakeRev       *domain.FlakeRev
-	Package        *domain.Package
-	AdaptedPackage gonix.RealizedOutput
-	AdaptedDrvPath string
-	Entries        []profile.Entry
-	Conflicts      []*domain.InstalledSource
+	Profile       domain.Profile
+	Request       *InstallPackageRequest
+	FlakeRev      *domain.FlakeRev
+	Package       *domain.Package
+	Output        *nix.RealizedOutput
+	AdaptedOutput *nix.RealizedOutput
+	Entries       []profile.Entry
+	Conflicts     []*domain.InstalledSource
 }
 
 // HasConflict reports whether installing the plan would collide with an
@@ -99,7 +98,7 @@ type InstallPackageRequest struct {
 	Output string
 	// Profile is the name of the target profile.
 	Profile string
-	// User is the owner o the flake alias.
+	// User is the owner of the flake alias.
 	User string
 	// System is the Nix system to resolve and adapt the package for.
 	System string
@@ -111,7 +110,7 @@ type InstallPackageRequest struct {
 // ApplyInstall with the returned plan to commit the installation.
 func (ion *Ion) PlanInstall(ctx context.Context, req InstallPackageRequest) (*InstallPlan, error) {
 	if req.FlakeAlias == "" || req.Attr == "" || req.Profile == "" || req.User == "" {
-		return nil, fmt.Errorf("missing required fields")
+		return nil, fmt.Errorf("ion: missing required fields")
 	}
 
 	if req.Output == "" {
@@ -124,35 +123,43 @@ func (ion *Ion) PlanInstall(ctx context.Context, req InstallPackageRequest) (*In
 
 	flakeRev, err := ion.store.GetLatestFlakeRev(ctx, req.User, req.FlakeAlias)
 	if err != nil {
-		return nil, fmt.Errorf("get latest flake revision: %w", err)
+		return nil, fmt.Errorf("ion: get latest flake revision: %w", err)
 	}
 
 	pkg, err := ion.store.GetPackage(ctx, flakeRev, req.Attr)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("failed to get package: %w", err)
+	if err != nil {
+		return nil, fmt.Errorf("ion: failed to get indexed package metadata: %w", err)
 	}
 
 	nixFlake, err := ion.nix.OpenLockedFlake(ctx, flakeRev.Flake.Ref, &flakeRev.LockInfo)
 	if err != nil {
-		return nil, fmt.Errorf("open locked flake: %w", err)
+		return nil, fmt.Errorf("ion: open locked flake: %w", err)
 	}
 
-	nixPkg, err := ion.nix.PullPackage(ctx, nixFlake, nix.PullPackageRequest{
-		Attr:       req.Attr,
-		System:     req.System,
-		OutputName: req.Output,
-	})
+	nixPkg, err := ion.nix.ResolvePackage(ctx, nixFlake, req.Attr, req.System)
 	if err != nil {
-		return nil, fmt.Errorf("realize package: %w", err)
+		return nil, fmt.Errorf("ion: resolve package: %w", err)
 	}
 
-	adaptedPkg, adaptedDrvPath, err := ion.injector.AdaptPackage(ctx, inject.Request{
-		Attr:             req.Attr,
-		FlakeRef:         flakeRev.Flake.Ref,
-		System:           req.System,
-		StorePath:        nixPkg.StorePath,
-		OutputName:       req.Output,
-		PlaceholderTweak: true,
+	nixOutput, err := ion.nix.RealizeOutput(ctx, nixPkg.DrvPath, req.Output)
+	if err != nil {
+		return nil, fmt.Errorf("ion: realize output: %w", err)
+	}
+
+	adaptedPkg, err := ion.injector.AdaptPackage(ctx, inject.Request{
+		Attr:       req.Attr,
+		FlakeRef:   flakeRev.Flake.Ref,
+		System:     req.System,
+		StorePath:  nixOutput.StorePath,
+		OutputName: req.Output,
+		Tweaks: inject.Tweaks{
+			Placeholder: inject.PlaceholderTweakConfig{
+				Enabled: true,
+			},
+			NixGL: inject.NixGLTweakConfig{
+				Enabled: false,
+			},
+		},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to adapt package: %w", err)
@@ -184,13 +191,14 @@ func (ion *Ion) PlanInstall(ctx context.Context, req InstallPackageRequest) (*In
 	}
 
 	return &InstallPlan{
-		Request:        &req,
-		FlakeRev:       flakeRev,
-		Package:        pkg,
-		AdaptedPackage: adaptedPkg,
-		AdaptedDrvPath: adaptedDrvPath,
-		Entries:        planned.Entries,
-		Conflicts:      conflicts,
+		Profile:       *profile,
+		Request:       &req,
+		FlakeRev:      flakeRev,
+		Package:       pkg,
+		Output:        nixOutput,
+		AdaptedOutput: adaptedPkg,
+		Entries:       planned.Entries,
+		Conflicts:     conflicts,
 	}, nil
 }
 
@@ -224,8 +232,8 @@ func (ion *Ion) ApplyInstall(ctx context.Context, plan *InstallPlan, decision do
 			Packages: []domain.ProfilePackage{
 				{
 					System:     plan.Request.System,
-					DrvPath:    plan.AdaptedDrvPath,
-					StorePath:  plan.AdaptedPackage.StorePath,
+					DrvPath:    plan.AdaptedOutput.DrvPath,
+					StorePath:  plan.AdaptedOutput.StorePath,
 					OutputName: plan.Request.Output,
 					Package:    *plan.Package,
 				},
@@ -255,15 +263,26 @@ func (ion *Ion) ApplyInstall(ctx context.Context, plan *InstallPlan, decision do
 	return nil
 }
 
+// ResolveConflict applies decision to one conflicting installed source.
 func (ion *Ion) ResolveConflict(ctx context.Context, e *store.Exacker, conflictedSource *domain.InstalledSource, decision domain.Decision) error {
 	if decision != domain.DecisionOverwrite {
 		return fmt.Errorf("ion: resolve conflict: unknown decision %q", decision)
 	}
 
-	files, err := ion.store.ListProfilePackageFiles(ctx, conflictedSource)
+	files, err := e.ListProfilePackageFiles(ctx, conflictedSource)
+	if err != nil {
+		return fmt.Errorf("ion: list conflicted package files: %w", err)
+	}
 
-	_ = files
-	_ = err
+	if err := e.DeleteProfilePackage(ctx, conflictedSource); err != nil {
+		return fmt.Errorf("ion: delete conflicted package: %w", err)
+	}
+
+	for _, file := range files {
+		if err := ion.profile.Unlink(file); err != nil {
+			return fmt.Errorf("ion: unlink conflicted file %q: %w", file, err)
+		}
+	}
 
 	return nil
 }

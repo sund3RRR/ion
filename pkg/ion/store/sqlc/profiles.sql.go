@@ -92,6 +92,31 @@ func (q *Queries) GetProfileByKindName(ctx context.Context, arg GetProfileByKind
 	return i, err
 }
 
+const getProfileByKindOwnerName = `-- name: GetProfileByKindOwnerName :one
+SELECT id, kind, name, owner, path, created_at FROM profiles
+WHERE kind = ? AND owner = ? AND name = ?
+`
+
+type GetProfileByKindOwnerNameParams struct {
+	Kind  string `json:"kind"`
+	Owner string `json:"owner"`
+	Name  string `json:"name"`
+}
+
+func (q *Queries) GetProfileByKindOwnerName(ctx context.Context, arg GetProfileByKindOwnerNameParams) (Profile, error) {
+	row := q.db.QueryRowContext(ctx, getProfileByKindOwnerName, arg.Kind, arg.Owner, arg.Name)
+	var i Profile
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.Name,
+		&i.Owner,
+		&i.Path,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const listProfiles = `-- name: ListProfiles :many
 SELECT id, kind, name, owner, path, created_at FROM profiles
 ORDER BY kind, owner, name

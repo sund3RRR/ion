@@ -24,7 +24,12 @@ INSERT INTO profile_packages (
     ?,
     ?,
     ?
-) RETURNING id, profile_id, package_id, platform_id, output_name, drv_path, store_path, created_at, updated_at
+)
+ON CONFLICT(package_id, profile_id, output_name, platform_id) DO UPDATE SET
+    drv_path = excluded.drv_path,
+    store_path = excluded.store_path,
+    updated_at = unixepoch()
+RETURNING id, profile_id, package_id, platform_id, output_name, drv_path, store_path, created_at, updated_at
 `
 
 type CreateProfilePackageParams struct {

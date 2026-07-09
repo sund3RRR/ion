@@ -1,20 +1,41 @@
-# Adapts a realized package output: copies it and appends a label to the
-# Name of every .desktop entry under share/applications.
-{ flakeRef, system, basePath, name, label }:
+{
+  flakeRef,
+  system,
+  basePath,
+  name,
+  tweaks,
+  tweakSources,
+}:
 let
   flake = builtins.getFlake flakeRef;
   pkgs = flake.legacyPackages.${system};
   base = builtins.storePath basePath;
+
+  placeholder = import (builtins.toFile "ion-placeholder-tweak.nix" tweakSources.placeholder);
+  nixgl = import (builtins.toFile "ion-nixgl-tweak.nix" tweakSources.nixgl);
+
+  enabledTweaks = builtins.filter (tweak: tweak.enabled) [
+    {
+      enabled = tweaks.placeholder.enabled;
+      apply = placeholder {
+        inherit pkgs;
+        label = tweaks.placeholder.label;
+      };
+    }
+    {
+      enabled = tweaks.nixgl.enabled;
+      apply = nixgl {
+        inherit pkgs;
+      };
+    }
+  ];
+
+  script = builtins.concatStringsSep "\n" (map (tweak: tweak.apply) enabledTweaks);
 in
 pkgs.runCommand name { } ''
-  mkdir -p $out
+  mkdir -p "$out"
   cp -a ${base}/. "$out"/
   chmod -R u+w "$out"
 
-  if [ -d "$out/share/applications" ]; then
-    for f in "$out"/share/applications/*.desktop; do
-      [ -e "$f" ] || continue
-      ${pkgs.gnused}/bin/sed -i -E 's/^(Name=.*)$/\1${label}/' "$f"
-    done
-  fi
+  ${script}
 ''

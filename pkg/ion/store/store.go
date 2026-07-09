@@ -104,38 +104,47 @@ func (s *Store) Migrate(ctx context.Context) error {
 	return nil
 }
 
+// GetLatestFlakeRev returns the newest indexed revision for owner and alias.
 func (s *Store) GetLatestFlakeRev(ctx context.Context, owner string, alias string) (*domain.FlakeRev, error) {
 	return s.exacker.GetLatestFlakeRev(ctx, owner, alias)
 }
 
+// GetPackage returns package metadata for attr in flakeRev.
 func (s *Store) GetPackage(ctx context.Context, flakeRev *domain.FlakeRev, attr string) (*domain.Package, error) {
 	return s.exacker.GetPackage(ctx, flakeRev, attr)
 }
 
+// GetProfilePackage returns the installed package that owns materialized path.
 func (s *Store) GetProfilePackage(ctx context.Context, path string) (*domain.ProfilePackage, error) {
 	return s.exacker.GetProfilePackage(ctx, path)
 }
 
+// GetConflictedPackages returns installed packages that own any path in files.
 func (s *Store) GetConflictedPackages(ctx context.Context, files []string) ([]*domain.InstalledSource, error) {
 	return s.exacker.GetConflictedPackages(ctx, files)
 }
 
+// GetProfile returns the profile identified by name and kind.
 func (s *Store) GetProfile(ctx context.Context, name string, kind domain.ProfileKind) (*domain.Profile, error) {
 	return s.exacker.GetProfile(ctx, name, kind)
 }
 
+// DeleteProfilePackage deletes source's profile package record.
 func (s *Store) DeleteProfilePackage(ctx context.Context, source *domain.InstalledSource) error {
 	return s.exacker.DeleteProfilePackage(ctx, source)
 }
 
+// ListProfilePackageFiles returns materialized paths owned by source.
 func (s *Store) ListProfilePackageFiles(ctx context.Context, source *domain.InstalledSource) ([]string, error) {
 	return s.exacker.ListProfilePackageFiles(ctx, source)
 }
 
+// CreateProfilePackage records source's installed profile package and files.
 func (s *Store) CreateProfilePackage(ctx context.Context, source *domain.InstalledSource) error {
 	return s.exacker.CreateProfilePackage(ctx, source)
 }
 
+// ExecTx runs fn inside a database transaction.
 func (s *Store) ExecTx(ctx context.Context, fn func(exacker *Exacker) error) error {
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {

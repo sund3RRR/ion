@@ -13,7 +13,12 @@ INSERT INTO profile_packages (
     ?,
     ?,
     ?
-) RETURNING *;
+)
+ON CONFLICT(package_id, profile_id, output_name, platform_id) DO UPDATE SET
+    drv_path = excluded.drv_path,
+    store_path = excluded.store_path,
+    updated_at = unixepoch()
+RETURNING *;
 
 -- name: GetProfilePackage :one
 SELECT * FROM profile_packages
