@@ -14,8 +14,6 @@ type Flake struct {
 	Alias string
 	// Ref is the Nix flake reference.
 	Ref string
-	// Fingerprint identifies the currently selected revision when present.
-	Fingerprint string
 	// CreatedAt is the time the flake was indexed.
 	CreatedAt time.Time
 	// UpdatedAt is the time the flake metadata last changed.

@@ -120,32 +120,30 @@ func (n *Nix) RealizeOutput(ctx context.Context, drvPath string, outputName stri
 	}, nil
 }
 
+// Derivation describes an evaluated Nix derivation.
 type Derivation struct {
-	Path    string   `nix:"drvPath" validate:"required"`
+	// Path is the store path of the evaluated .drv file.
+	Path string `nix:"drvPath" validate:"required"`
+	// Outputs lists the output names declared by the derivation.
 	Outputs []string `nix:"outputs"`
 }
 
 // CallDerivation evaluates expr as a Nix function and applies it to args,
-// passing each value as a Nix string, then returns the resulting
-// derivation's store path and declared output names.
+// then returns the resulting derivation.
 //
-// Arguments are passed as real Nix values through the gonix evaluator
-// (eval.String, eval.Attrs) rather than substituted into expr as text, so
-// arbitrary Go string values need no Nix-syntax escaping.
-func (n *Nix) CallDerivation(
-	ctx context.Context,
-	expr string,
-	args any,
-) (Derivation, error) {
-	var value Derivation
-	if err := n.client.EvalWithArgs(ctx, expr, args, &value); err != nil {
-		return Derivation{}, fmt.Errorf("nix: evaluate derivation function: %w", err)
+// Arguments are passed through gonix.EvalWithArgs, so callers can provide the
+// Go values supported by gonix argument conversion instead of interpolating
+// Nix source text.
+func (n *Nix) CallDerivation(ctx context.Context, expr string, args any) (*Derivation, error) {
+	var drv Derivation
+	if err := n.client.EvalWithArgs(ctx, expr, args, &drv); err != nil {
+		return nil, fmt.Errorf("nix: evaluate derivation function: %w", err)
 	}
-	if value.Path == "" {
-		return Derivation{}, errors.New("nix: evaluated derivation has empty drv path")
+	if drv.Path == "" {
+		return nil, errors.New("nix: evaluated derivation has empty drv path")
 	}
 
-	return value, nil
+	return &drv, nil
 }
 
 func (n *Nix) ResolvePackage(ctx context.Context, flake *gonixflake.Flake, attr string, system string) (*ResolvedPackage, error) {
@@ -170,13 +168,7 @@ func (n *Nix) ResolvePackage(ctx context.Context, flake *gonixflake.Flake, attr 
 	return nil, ErrPkgNotFound
 }
 
-func (n *Nix) resolvePackagePath(
-	ctx context.Context,
-	flake *gonixflake.Flake,
-	attr string,
-	path []string,
-	system string,
-) (*ResolvedPackage, error) {
+func (n *Nix) resolvePackagePath(ctx context.Context, flake *gonixflake.Flake, attr string, path []string, system string) (*ResolvedPackage, error) {
 	type resolvedValues struct {
 		Name    string   `nix:"name"`
 		Version string   `nix:"version"`
